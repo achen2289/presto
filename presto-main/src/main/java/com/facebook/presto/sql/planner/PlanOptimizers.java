@@ -75,6 +75,7 @@ import com.facebook.presto.sql.planner.iterative.rule.PruneTableScanColumns;
 import com.facebook.presto.sql.planner.iterative.rule.PruneTopNColumns;
 import com.facebook.presto.sql.planner.iterative.rule.PruneValuesColumns;
 import com.facebook.presto.sql.planner.iterative.rule.PruneWindowColumns;
+import com.facebook.presto.sql.planner.iterative.rule.PullConstantsAboveGroupBy;
 import com.facebook.presto.sql.planner.iterative.rule.PushAggregationThroughOuterJoin;
 import com.facebook.presto.sql.planner.iterative.rule.PushDownDereferences;
 import com.facebook.presto.sql.planner.iterative.rule.PushLimitThroughMarkDistinct;
@@ -145,6 +146,7 @@ import com.facebook.presto.sql.planner.optimizations.PredicatePushDown;
 import com.facebook.presto.sql.planner.optimizations.PruneUnreferencedOutputs;
 import com.facebook.presto.sql.planner.optimizations.PushdownSubfields;
 import com.facebook.presto.sql.planner.optimizations.RandomizeNullKeyInOuterJoin;
+import com.facebook.presto.sql.planner.optimizations.RemoveRedundantDistinctAggregation;
 import com.facebook.presto.sql.planner.optimizations.ReplicateSemiJoinInDelete;
 import com.facebook.presto.sql.planner.optimizations.RewriteIfOverAggregation;
 import com.facebook.presto.sql.planner.optimizations.SetFlatteningOptimizer;
@@ -414,7 +416,12 @@ public class PlanOptimizers
                                 new InlineProjections(metadata.getFunctionAndTypeManager()),
                                 new RemoveRedundantIdentityProjections(),
                                 new TransformCorrelatedSingleRowSubqueryToProject())),
-                new CheckSubqueryNodesAreRewritten());
+                new CheckSubqueryNodesAreRewritten(),
+                new IterativeOptimizer(
+                        ruleStats,
+                        statsCalculator,
+                        estimatedExchangesCostCalculator,
+                        ImmutableSet.of(new PullConstantsAboveGroupBy())));
 
         // TODO: move this before optimization if possible!!
         // Replace all expressions with row expressions
@@ -601,6 +608,8 @@ public class PlanOptimizers
                         .addAll(new ExtractSpatialJoins(metadata, splitManager, pageSourceManager).rules())
                         .add(new InlineProjections(metadata.getFunctionAndTypeManager()))
                         .build()));
+
+        builder.add(new RemoveRedundantDistinctAggregation());
 
         if (!forceSingleNode) {
             builder.add(new ReplicateSemiJoinInDelete()); // Must run before AddExchanges

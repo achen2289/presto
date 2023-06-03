@@ -112,6 +112,9 @@ import com.facebook.presto.spark.execution.NativeExecutionTaskFactory;
 import com.facebook.presto.spark.execution.PrestoSparkBroadcastTableCacheManager;
 import com.facebook.presto.spark.execution.PrestoSparkExecutionExceptionFactory;
 import com.facebook.presto.spark.execution.PrestoSparkTaskExecutorFactory;
+import com.facebook.presto.spark.execution.property.NativeExecutionConnectorConfig;
+import com.facebook.presto.spark.execution.property.NativeExecutionNodeConfig;
+import com.facebook.presto.spark.execution.property.NativeExecutionSystemConfig;
 import com.facebook.presto.spark.node.PrestoSparkInternalNodeManager;
 import com.facebook.presto.spark.node.PrestoSparkNodePartitioningManager;
 import com.facebook.presto.spark.node.PrestoSparkQueryManager;
@@ -146,9 +149,9 @@ import com.facebook.presto.split.SplitManager;
 import com.facebook.presto.sql.Serialization.VariableReferenceExpressionDeserializer;
 import com.facebook.presto.sql.Serialization.VariableReferenceExpressionSerializer;
 import com.facebook.presto.sql.SqlEnvironmentConfig;
+import com.facebook.presto.sql.analyzer.BuiltInQueryPreparer;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.analyzer.QueryExplainer;
-import com.facebook.presto.sql.analyzer.QueryPreparer;
 import com.facebook.presto.sql.gen.ExpressionCompiler;
 import com.facebook.presto.sql.gen.JoinCompiler;
 import com.facebook.presto.sql.gen.JoinFilterFunctionCompiler;
@@ -168,6 +171,7 @@ import com.facebook.presto.sql.planner.PlanOptimizers;
 import com.facebook.presto.sql.planner.sanity.PlanChecker;
 import com.facebook.presto.sql.relational.RowExpressionDeterminismEvaluator;
 import com.facebook.presto.sql.relational.RowExpressionDomainTranslator;
+import com.facebook.presto.tracing.TracerProviderManager;
 import com.facebook.presto.tracing.TracingConfig;
 import com.facebook.presto.transaction.InMemoryTransactionManager;
 import com.facebook.presto.transaction.TransactionManager;
@@ -244,6 +248,9 @@ public class PrestoSparkModule
         configBinder(binder).bindConfig(StaticFunctionNamespaceStoreConfig.class);
         configBinder(binder).bindConfig(PrestoSparkConfig.class);
         configBinder(binder).bindConfig(TracingConfig.class);
+        configBinder(binder).bindConfig(NativeExecutionSystemConfig.class);
+        configBinder(binder).bindConfig(NativeExecutionNodeConfig.class);
+        configBinder(binder).bindConfig(NativeExecutionConnectorConfig.class);
 
         // json codecs
         jsonCodecBinder(binder).bindJsonCodec(ViewDefinition.class);
@@ -304,6 +311,9 @@ public class PrestoSparkModule
         binder.bind(ColumnPropertyManager.class).in(Scopes.SINGLETON);
         binder.bind(AnalyzePropertyManager.class).in(Scopes.SINGLETON);
         binder.bind(QuerySessionSupplier.class).in(Scopes.SINGLETON);
+
+        // tracer provider managers
+        binder.bind(TracerProviderManager.class).in(Scopes.SINGLETON);
 
         // block encodings
         binder.bind(BlockEncodingManager.class).in(Scopes.SINGLETON);
@@ -398,7 +408,7 @@ public class PrestoSparkModule
         binder.bind(FragmentCacheStats.class).in(Scopes.SINGLETON);
         binder.bind(IndexJoinLookupStats.class).in(Scopes.SINGLETON);
         binder.bind(QueryIdGenerator.class).in(Scopes.SINGLETON);
-        binder.bind(QueryPreparer.class).in(Scopes.SINGLETON);
+        binder.bind(BuiltInQueryPreparer.class).in(Scopes.SINGLETON);
         jsonBinder(binder).addKeySerializerBinding(VariableReferenceExpression.class).to(VariableReferenceExpressionSerializer.class);
         jsonBinder(binder).addKeyDeserializerBinding(VariableReferenceExpression.class).to(VariableReferenceExpressionDeserializer.class);
 

@@ -26,10 +26,10 @@ import com.facebook.presto.server.security.SecurityConfig;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.session.PropertyMetadata;
 import com.facebook.presto.spiller.NodeSpillConfig;
+import com.facebook.presto.sql.analyzer.AnalyzerType;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.AggregationIfToFilterRewriteStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.AggregationPartitioningMergingStrategy;
-import com.facebook.presto.sql.analyzer.FeaturesConfig.AnalyzerType;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.JoinDistributionType;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.JoinReorderingStrategy;
 import com.facebook.presto.sql.analyzer.FeaturesConfig.PartialAggregationStrategy;
@@ -178,6 +178,7 @@ public final class SystemSessionProperties
     public static final String MAX_TASKS_PER_STAGE = "max_tasks_per_stage";
     public static final String DEFAULT_FILTER_FACTOR_ENABLED = "default_filter_factor_enabled";
     public static final String PUSH_LIMIT_THROUGH_OUTER_JOIN = "push_limit_through_outer_join";
+    public static final String OPTIMIZE_CONSTANT_GROUPING_KEYS = "optimize_constant_grouping_keys";
     public static final String MAX_CONCURRENT_MATERIALIZATIONS = "max_concurrent_materializations";
     public static final String PUSHDOWN_SUBFIELDS_ENABLED = "pushdown_subfields_enabled";
     public static final String TABLE_WRITER_MERGE_OPERATOR_ENABLED = "table_writer_merge_operator_enabled";
@@ -248,10 +249,13 @@ public final class SystemSessionProperties
     public static final String QUICK_DISTINCT_LIMIT_ENABLED = "quick_distinct_limit_enabled";
     public static final String OPTIMIZE_CONDITIONAL_AGGREGATION_ENABLED = "optimize_conditional_aggregation_enabled";
     public static final String ANALYZER_TYPE = "analyzer_type";
+    public static final String REMOVE_REDUNDANT_DISTINCT_AGGREGATION_ENABLED = "remove_redundant_distinct_aggregation_enabled";
 
     // TODO: Native execution related session properties that are temporarily put here. They will be relocated in the future.
     public static final String NATIVE_SIMPLIFIED_EXPRESSION_EVALUATION_ENABLED = "simplified_expression_evaluation_enabled";
     public static final String NATIVE_AGGREGATION_SPILL_MEMORY_THRESHOLD = "aggregation_spill_memory_threshold";
+    public static final String NATIVE_JOIN_SPILL_MEMORY_THRESHOLD = "join_spill_memory_threshold";
+    public static final String NATIVE_ORDER_BY_SPILL_MEMORY_THRESHOLD = "order_by_spill_memory_threshold";
     public static final String NATIVE_EXECUTION_ENABLED = "native_execution_enabled";
     public static final String NATIVE_EXECUTION_EXECUTABLE_PATH = "native_execution_executable_path";
 
@@ -955,6 +959,11 @@ public final class SystemSessionProperties
                         "push limits to the outer side of an outer join",
                         featuresConfig.isPushLimitThroughOuterJoin(),
                         false),
+                booleanProperty(
+                        OPTIMIZE_CONSTANT_GROUPING_KEYS,
+                        "Pull constant grouping keys above the group by",
+                        featuresConfig.isOptimizeConstantGroupingKeys(),
+                        false),
                 integerProperty(
                         MAX_CONCURRENT_MATERIALIZATIONS,
                         "Maximum number of materializing plan sections that can run concurrently",
@@ -1378,6 +1387,16 @@ public final class SystemSessionProperties
                         "Native Execution only. The max memory that a final aggregation can use before spilling. If it is 0, then there is no limit",
                         0,
                         false),
+                integerProperty(
+                        NATIVE_JOIN_SPILL_MEMORY_THRESHOLD,
+                        "Native Execution only. The max memory that hash join can use before spilling. If it is 0, then there is no limit",
+                        0,
+                        false),
+                integerProperty(
+                        NATIVE_ORDER_BY_SPILL_MEMORY_THRESHOLD,
+                        "Native Execution only. The max memory that order by can use before spilling. If it is 0, then there is no limit",
+                        0,
+                        false),
                 booleanProperty(
                         NATIVE_EXECUTION_ENABLED,
                         "Enable execution on native engine",
@@ -1397,6 +1416,11 @@ public final class SystemSessionProperties
                         OPTIMIZE_CONDITIONAL_AGGREGATION_ENABLED,
                         "Enable rewriting IF(condition, AGG(x)) to AGG(x) with condition included in mask",
                         featuresConfig.isOptimizeConditionalAggregationEnabled(),
+                        false),
+                booleanProperty(
+                        REMOVE_REDUNDANT_DISTINCT_AGGREGATION_ENABLED,
+                        "Enable removing distinct aggregation node if input is already distinct",
+                        featuresConfig.isRemoveRedundantDistinctAggregationEnabled(),
                         false));
     }
 
@@ -2037,6 +2061,11 @@ public final class SystemSessionProperties
         return session.getSystemProperty(PUSH_LIMIT_THROUGH_OUTER_JOIN, Boolean.class);
     }
 
+    public static boolean isOptimizeConstantGroupingKeys(Session session)
+    {
+        return session.getSystemProperty(OPTIMIZE_CONSTANT_GROUPING_KEYS, Boolean.class);
+    }
+
     public static int getMaxConcurrentMaterializations(Session session)
     {
         return session.getSystemProperty(MAX_CONCURRENT_MATERIALIZATIONS, Integer.class);
@@ -2346,5 +2375,10 @@ public final class SystemSessionProperties
     public static boolean isOptimizeConditionalAggregationEnabled(Session session)
     {
         return session.getSystemProperty(OPTIMIZE_CONDITIONAL_AGGREGATION_ENABLED, Boolean.class);
+    }
+
+    public static boolean isRemoveRedundantDistinctAggregationEnabled(Session session)
+    {
+        return session.getSystemProperty(REMOVE_REDUNDANT_DISTINCT_AGGREGATION_ENABLED, Boolean.class);
     }
 }

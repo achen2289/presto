@@ -25,19 +25,7 @@
 #include "presto_cpp/main/types/TypeSignatureTypeConverter.h"
 // clang-format on
 
-#include <boost/uuid/uuid.hpp>
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
-
 #include <folly/container/F14Set.h>
-
-#if __has_include("filesystem")
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#endif
 
 using namespace facebook::velox;
 
@@ -89,7 +77,7 @@ connector::hive::HiveColumnHandle::ColumnType toHiveColumnType(
     case protocol::ColumnType::SYNTHESIZED:
       return connector::hive::HiveColumnHandle::ColumnType::kSynthesized;
     default:
-      throw std::invalid_argument("Unknown Hive column type");
+      VELOX_UNSUPPORTED("Unknown Hive column type");
   }
 }
 
@@ -109,7 +97,47 @@ std::shared_ptr<connector::ColumnHandle> toColumnHandle(
         tpchColumn->columnName);
   }
 
-  throw std::invalid_argument("Unknown column handle type: " + column->_type);
+  VELOX_UNSUPPORTED("Unknown column handle type:{}", column->_type);
+}
+
+connector::hive::LocationHandle::TableType toTableType(
+    protocol::TableType tableType) {
+  switch (tableType) {
+    case protocol::TableType::NEW:
+      return connector::hive::LocationHandle::TableType::kNew;
+    case protocol::TableType::EXISTING:
+      return connector::hive::LocationHandle::TableType::kExisting;
+    case protocol::TableType::TEMPORARY:
+      return connector::hive::LocationHandle::TableType::kTemporary;
+    default:
+      VELOX_UNSUPPORTED("Unknown table type");
+  }
+}
+
+connector::hive::LocationHandle::WriteMode toWriteMode(
+    protocol::WriteMode writeMode) {
+  switch (writeMode) {
+    case protocol::WriteMode::STAGE_AND_MOVE_TO_TARGET_DIRECTORY:
+      return connector::hive::LocationHandle::WriteMode::
+          kStageAndMoveToTargetDirectory;
+    case protocol::WriteMode::DIRECT_TO_TARGET_NEW_DIRECTORY:
+      return connector::hive::LocationHandle::WriteMode::
+          kDirectToTargetNewDirectory;
+    case protocol::WriteMode::DIRECT_TO_TARGET_EXISTING_DIRECTORY:
+      return connector::hive::LocationHandle::WriteMode::
+          kDirectToTargetExistingDirectory;
+    default:
+      VELOX_UNSUPPORTED("Unknown write mode");
+  }
+}
+
+std::shared_ptr<connector::hive::LocationHandle> toLocationHandle(
+    const protocol::LocationHandle& locationHandle) {
+  return std::make_shared<connector::hive::LocationHandle>(
+      locationHandle.targetPath,
+      locationHandle.writePath,
+      toTableType(locationHandle.tableType),
+      toWriteMode(locationHandle.writeMode));
 }
 
 int64_t toInt64(
@@ -637,7 +665,7 @@ std::shared_ptr<connector::ConnectorTableHandle> toConnectorTableHandle(
         tpch::fromTableName(tpchLayout->table.tableName),
         tpchLayout->table.scaleFactor);
   }
-  throw std::invalid_argument("Unsupported TableHandle type");
+  VELOX_UNSUPPORTED("Unsupported TableHandle type");
 }
 
 std::vector<core::TypedExprPtr> getProjections(
@@ -668,7 +696,7 @@ void setCellFromVariantByKind<TypeKind::VARBINARY>(
     const VectorPtr& /*column*/,
     vector_size_t /*row*/,
     const velox::variant& value) {
-  throw std::invalid_argument("Return of VARBINARY data is not supported");
+  VELOX_UNSUPPORTED("Return of VARBINARY data is not supported");
 }
 
 template <>
@@ -721,7 +749,7 @@ core::SortOrder toVeloxSortOrder(const protocol::SortOrder& sortOrder) {
     case protocol::SortOrder::DESC_NULLS_LAST:
       return core::SortOrder(false, false);
     default:
-      throw std::invalid_argument("Unknown sort order");
+      VELOX_UNSUPPORTED("Unknown sort order");
   }
 }
 
@@ -1632,24 +1660,51 @@ VeloxQueryPlanConverter::toVeloxQueryPlan(
     const std::shared_ptr<const protocol::TableWriterNode>& node,
     const std::shared_ptr<protocol::TableWriteInfo>& tableWriteInfo,
     const protocol::TaskId& taskId) {
-  auto outputTableHandle = std::dynamic_pointer_cast<protocol::CreateHandle>(
-                               tableWriteInfo->writerTarget)
-                               ->handle;
+  std::string connectorId;
+  std::vector<std::shared_ptr<const connector::hive::HiveColumnHandle>>
+      inputColumns;
+  std::shared_ptr<connector::ConnectorInsertTableHandle> hiveTableHandle;
+  if (auto createHandle = std::dynamic_pointer_cast<protocol::CreateHandle>(
+          tableWriteInfo->writerTarget)) {
+    connectorId = createHandle->handle.connectorId;
 
-  auto hiveOutputTableHandle =
-      std::dynamic_pointer_cast<protocol::HiveOutputTableHandle>(
-          outputTableHandle.connectorHandle);
+    auto hiveOutputTableHandle =
+        std::dynamic_pointer_cast<protocol::HiveOutputTableHandle>(
+            createHandle->handle.connectorHandle);
 
-  auto uuid = boost::uuids::random_generator()();
-  auto fileName = boost::uuids::to_string(uuid);
+    for (const auto& columnHandle : hiveOutputTableHandle->inputColumns) {
+      inputColumns.emplace_back(
+          std::dynamic_pointer_cast<connector::hive::HiveColumnHandle>(
+              toColumnHandle(&columnHandle)));
+    }
 
-  auto filePath =
-      fs::path(hiveOutputTableHandle->locationHandle.writePath) / fileName;
+    hiveTableHandle = std::make_shared<connector::hive::HiveInsertTableHandle>(
+        inputColumns, toLocationHandle(hiveOutputTableHandle->locationHandle));
+  } else if (
+      auto insertHandle = std::dynamic_pointer_cast<protocol::InsertHandle>(
+          tableWriteInfo->writerTarget)) {
+    connectorId = insertHandle->handle.connectorId;
 
-  auto hiveTableHandle =
-      std::make_shared<velox::connector::hive::HiveInsertTableHandle>(filePath);
-  auto insertTableHandle = std::make_shared<core::InsertTableHandle>(
-      outputTableHandle.connectorId, hiveTableHandle);
+    auto hiveInsertTableHandle =
+        std::dynamic_pointer_cast<protocol::HiveInsertTableHandle>(
+            insertHandle->handle.connectorHandle);
+
+    for (const auto& columnHandle : hiveInsertTableHandle->inputColumns) {
+      inputColumns.emplace_back(
+          std::dynamic_pointer_cast<connector::hive::HiveColumnHandle>(
+              toColumnHandle(&columnHandle)));
+    }
+
+    hiveTableHandle = std::make_shared<connector::hive::HiveInsertTableHandle>(
+        inputColumns, toLocationHandle(hiveInsertTableHandle->locationHandle));
+  } else {
+    VELOX_UNSUPPORTED(
+        "Unsupported table writer handle: {}",
+        toJsonString(tableWriteInfo->writerTarget));
+  }
+
+  auto insertTableHandle =
+      std::make_shared<core::InsertTableHandle>(connectorId, hiveTableHandle);
 
   auto outputType = toRowType(
       {node->rowCountVariable,

@@ -159,6 +159,7 @@ public class FeaturesConfig
     private double partialAggregationByteReductionThreshold = 0.5;
     private boolean optimizeTopNRowNumber = true;
     private boolean pushLimitThroughOuterJoin = true;
+    private boolean optimizeConstantGroupingKeys = true;
 
     private Duration iterativeOptimizerTimeout = new Duration(3, MINUTES); // by default let optimizer wait a long time in case it retrieves some data from ConnectorMetadata
     private Duration queryAnalyzerTimeout = new Duration(3, MINUTES);
@@ -239,6 +240,7 @@ public class FeaturesConfig
     private String nativeExecutionExecutablePath = "./presto_server";
     private boolean randomizeOuterJoinNullKey;
     private boolean isOptimizeConditionalAggregationEnabled;
+    private boolean isRemoveRedundantDistinctAggregationEnabled = true;
 
     public enum PartitioningPrecisionStrategy
     {
@@ -321,12 +323,6 @@ public class FeaturesConfig
         FILTER_WITH_IF, // Rewrites AGG(IF(condition, expr)) to AGG(IF(condition, expr)) FILTER (WHERE condition).
         UNWRAP_IF_SAFE, // Rewrites AGG(IF(condition, expr)) to AGG(expr) FILTER (WHERE condition) if it is safe to do so.
         UNWRAP_IF // Rewrites AGG(IF(condition, expr)) to AGG(expr) FILTER (WHERE condition).
-    }
-
-    public enum AnalyzerType
-    {
-        BUILTIN,
-        NATIVE
     }
 
     public double getCpuCostWeight()
@@ -1634,6 +1630,18 @@ public class FeaturesConfig
         return pushLimitThroughOuterJoin;
     }
 
+    @Config("optimizer.optimize-constant-grouping-keys")
+    public FeaturesConfig setOptimizeConstantGroupingKeys(boolean optimizeConstantGroupingKeys)
+    {
+        this.optimizeConstantGroupingKeys = optimizeConstantGroupingKeys;
+        return this;
+    }
+
+    public boolean isOptimizeConstantGroupingKeys()
+    {
+        return optimizeConstantGroupingKeys;
+    }
+
     @Config("max-concurrent-materializations")
     @ConfigDescription("The maximum number of materializing plan sections that can run concurrently")
     public FeaturesConfig setMaxConcurrentMaterializations(int maxConcurrentMaterializations)
@@ -2264,6 +2272,19 @@ public class FeaturesConfig
     public FeaturesConfig setOptimizeConditionalAggregationEnabled(boolean isOptimizeConditionalAggregationEnabled)
     {
         this.isOptimizeConditionalAggregationEnabled = isOptimizeConditionalAggregationEnabled;
+        return this;
+    }
+
+    public boolean isRemoveRedundantDistinctAggregationEnabled()
+    {
+        return isRemoveRedundantDistinctAggregationEnabled;
+    }
+
+    @Config("optimizer.remove-redundant-distinct-aggregation-enabled")
+    @ConfigDescription("Enable removing distinct aggregation node if input is already distinct")
+    public FeaturesConfig setRemoveRedundantDistinctAggregationEnabled(boolean isRemoveRedundantDistinctAggregationEnabled)
+    {
+        this.isRemoveRedundantDistinctAggregationEnabled = isRemoveRedundantDistinctAggregationEnabled;
         return this;
     }
 }
